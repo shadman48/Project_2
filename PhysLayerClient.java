@@ -2,9 +2,8 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.lang.reflect.Array;
 import java.net.Socket;
-import java.util.Arrays;
+import java.util.TreeMap;
 
 public class PhysLayerClient {
 
@@ -18,9 +17,8 @@ public class PhysLayerClient {
     		OutputStream os = socket.getOutputStream();
     		DataOutputStream dos = new DataOutputStream(os);
     		byte[] preamble = new byte[64];
-    		byte[] encodedArray = new byte[32];
-    		byte[] signalArray = new byte[32];
     		byte[] decodedArray = new byte[32];
+    		String[] signalArray = new String[64];
     		byte reply;
     		
     		
@@ -42,34 +40,40 @@ public class PhysLayerClient {
     		
     		//Create Baseline
     		baseline = baseline / 64;
-    		System.out.println("Baseline from preamble: " + baseline + " \n" + Arrays.toString(preamble));
+    		System.out.printf("Baseline from preamble: %.2f\n", baseline);
     		
-    		//System.out.println("HEX " + bytesToHex(preamble));
     		
-    		//Reads in 32 bytes randomly generated
+    		
+    		//Reads in 32 bytes randomly generated and decodes data using 4B/5B
     		n = 0;
-    		for(int i = 0; i <= 31; i++)
+    		TreeMap<String, String> fBfB = new TreeMap<>();
+    		lookUpTable(fBfB);
+			boolean lastSignal = false;
+    		for(int i = 0; i < 64; i++)
     		{
-    			n = dis.readUnsignedByte();
-        		encodedArray[i] = (byte)n; 
-        		
-        		//converts signal to 1's & 0's
-        		if(n > baseline)
-        			signalArray[i] = 1;
-        		else
-        			signalArray[i] = 0;
+    			String bVal = "";
+    			for(int j = 0; j < 5; j++)
+    			{
+    				boolean thisSignal = is.read() > baseline;
+    				bVal += (lastSignal == thisSignal)? "0":"1";
+					lastSignal = thisSignal;
+    			}
+        		signalArray[i] = fBfB.get(bVal); 
     		}
-    		
-    		System.out.println(Arrays.toString(encodedArray));
-    		System.out.println(Arrays.toString(signalArray));
-    		System.out.println("HEX " + bytesToHex(encodedArray));
+    		System.out.print("Received 32 bytes: ");
+    
     		
     		
-    		//decodes data using 4B/5B with NRZI
-//    		commit to git
-    		int bVal = lookUpTable(11011);
-    		System.out.println(bVal);
-    		
+    		//Reconstructs into bytes.
+    		for(int i = 0; i < 32; i++)
+    		{
+    			String upperNibble = signalArray[2*i];
+				String lowerNibble = signalArray[2*i+1];
+				System.out.printf("%X", Integer.parseInt(upperNibble, 2));
+				System.out.printf("%X", Integer.parseInt(lowerNibble, 2));
+				String wholeByte = upperNibble + lowerNibble;
+				decodedArray[i] = (byte)Integer.parseInt(wholeByte, 2);
+    		}
     		
     		
     		 
@@ -83,13 +87,13 @@ public class PhysLayerClient {
     		//Receive signal either 0 or 1 for error checking.
     		reply = dis.readByte() ;  
     		
-    		if(reply > baseline)
+    		if(reply == 1)
     		{
-    			System.out.println("Decode correctly.");
+    			System.out.println("\nDecode correctly.");
     		}
     		else
     		{
-    			System.out.println("Did not decode correctly.");
+    			System.out.println("\nDid not decode correctly.");
     		}
         }
 	}
@@ -102,60 +106,24 @@ public class PhysLayerClient {
 	
 	
 	//Creates a look up table for converting 5Bits to 4Bits.
-	public static int lookUpTable(int valIn)
+	public static void lookUpTable(TreeMap<String,String> table)
 	{
-		int[][] table = new int[2][16];
-		int valOut = 0;
-		
-		//4 Bit Data.
-		table[0][0] = 0000;
-		table[0][1] = 0001;
-		table[0][2] = 0010;
-		table[0][3] = 0011;
-		table[0][4] = 0100;
-		table[0][5] = 0101;
-		table[0][6] = 0110;
-		table[0][7] = 0111;
-		table[0][8] = 1000;
-		table[0][9] = 1001;
-		table[0][10] = 1010;
-		table[0][11] = 1011;
-		table[0][12] = 1100;
-		table[0][13] = 1101;
-		table[0][14] = 1110;
-		table[0][15] = 1111;
-		
-		//5 Bit Data.
-		table[1][0] = 11110;
-		table[1][1] = 01001;
-		table[1][2] = 10100;
-		table[1][3] = 10101;
-		table[1][4] = 01010;
-		table[1][5] = 01011;
-		table[1][6] = 01110;
-		table[1][7] = 01111;
-		table[1][8] = 10010;
-		table[1][9] = 10011;
-		table[1][10] = 10110;
-		table[1][11] = 10111;
-		table[1][12] = 11010;
-		table[1][13] = 11011;
-		table[1][14] = 11100;
-		table[1][15] = 11101;
-		
-		int temp;
-		for(int i = 0; i <= 15; i++)
-		{
-			temp = table[1][i]; 
-			
-			if(temp == valIn)
-			{
-				valOut = table[0][i];
-				break;
-			}
-		}
-		
-		return valOut;
+		table.put("11110","0000");
+		table.put("01001","0001");
+		table.put("10100","0010");
+		table.put("10101","0011");
+		table.put("01010","0100");
+		table.put("01011","0101");
+		table.put("01110","0110");
+		table.put("01111","0111");
+		table.put("10010","1000");
+		table.put("10011","1001");
+		table.put("10110","1010");
+		table.put("10111","1011");
+		table.put("11010","1100");
+		table.put("11011","1101");
+		table.put("11100","1110");
+		table.put("11101","1111");
 	}
 	
 	
@@ -172,6 +140,7 @@ public class PhysLayerClient {
 	    }
 	    return new String(hexChars);
 	}
+	
 	
 	
 	
